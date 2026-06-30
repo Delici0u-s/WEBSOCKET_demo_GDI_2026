@@ -147,7 +147,8 @@ wss.on("connection", (socket, req) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`HTTP   : http://localhost:${PORT}/poll?since=-1`);
-  console.log(`WS     : ws://localhost:${PORT}/chat`);
-  console.log(`metrics: http://localhost:${PORT}/metrics`);
+  console.log(`Interactive Demo: http://localhost:${PORT}/`);
+  console.log(`HTTP            : http://localhost:${PORT}/poll?since=-1`);
+  console.log(`WS              : ws://localhost:${PORT}/chat`);
+  console.log(`metrics         : http://localhost:${PORT}/metrics`);
 });
