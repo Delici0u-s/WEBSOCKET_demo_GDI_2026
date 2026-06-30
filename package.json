@@ -1,0 +1,13 @@
+{
+  "name": "ws-vs-http-demo",
+  "version": "1.0.0",
+  "description": "WebSocket vs HTTP-Polling: API demo + real byte/latency benchmarks",
+  "type": "module",
+  "scripts": {
+    "server": "node src/server/index.js",
+    "bench": "node src/bench/runner.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebSocket vs HTTP-Polling — API-Demo</title>
+  <style>
+    body {
+      font: 14px/1.5 system-ui, sans-serif;
+      margin: 2rem;
+      max-width: 900px;
+    }
+
+    .cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    .panel {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+
+    .log {
+      height: 180px;
+      overflow-y: auto;
+      background: #f6f6f6;
+      padding: .5rem;
+      border-radius: 4px;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+    }
+
+    .state {
+      font-weight: bold;
+    }
+
+    input,
+    button {
+      font: inherit;
+      padding: .35rem .6rem;
+    }
+
+    .row {
+      display: flex;
+      gap: .5rem;
+      margin-top: .75rem;
+    }
+
+    .row input {
+      flex: 1;
+    }
+
+    code {
+      background: #eee;
+      padding: 0 .25rem;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>WebSocket-API vs. HTTP-Polling</h1>
+  <p>
+    Beide Panels reden mit demselben Backend (<code>bus</code>). Links wird im
+    Sekundentakt gepollt, rechts kommt jede Nachricht per Server-Push an. Öffne
+    die DevTools → Network, um den Unterschied im Traffic zu sehen.
+  </p>
+
+  <div class="cols">
+    <!-- ============ HTTP-Polling ============ -->
+    <div class="panel">
+      <h2>HTTP-Polling</h2>
+      <p class="state">Status: <span id="httpState">idle</span></p>
+      <div class="log" id="httpLog"></div>
+      <div class="row">
+        <input id="httpInput" placeholder="Nachricht…" />
+        <button id="httpSend">send</button>
+        <button id="httpRandom" type="button">🎲 random</button>
+      </div>
+    </div>
+
+    <!-- ============ WebSocket ============ -->
+    <div class="panel">
+      <h2>WebSocket</h2>
+      <p class="state">Status: <span id="wsState">CONNECTING</span></p>
+      <div class="log" id="wsLog"></div>
+      <div class="row">
+        <input id="wsInput" placeholder="Nachricht…" />
+        <button id="wsSend">send</button>
+        <button id="wsRandom" type="button">🎲 random</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    const BASE = location.origin;          // http://localhost:8080
+    const WS_URL = BASE.replace(/^http/, "ws") + "/chat";
+
+    const $ = (id) => document.getElementById(id);
+    const append = (logId, line) => {
+      const el = $(logId);
+      el.innerHTML += line + "<br>";
+      el.scrollTop = el.scrollHeight;
+    };
+
+    // --- gemeinsamer Helfer für zufällige Testnachrichten ---
+    const WORDS = ["foo", "bar", "baz", "qux", "lorem", "ipsum", "ping", "pong", "test", "alpha", "delta", "node"];
+    const randomMessage = () => {
+      const word = WORDS[Math.floor(Math.random() * WORDS.length)];
+      const num = Math.floor(Math.random() * 999);
+      return `${word}-${num}`;
+    };
+
+    /* ================================================================
+     *  1) HTTP-POLLING  (entspricht Quelltext 3 im Paper)
+     *  Der Client weiß nicht, WANN neue Daten da sind, also fragt er
+     *  blind jede Sekunde nach. Die meisten Antworten sind leer.
+     * ================================================================ */
+    let httpSinceId = -1;
+    async function poll() {
+      $("httpState").textContent = "polling…";
+      try {
+        const res = await fetch(`${BASE}/poll?since=${httpSinceId}`);
+        const { messages, lastId } = await res.json();
+        httpSinceId = lastId;
+        for (const m of messages) append("httpLog", `#${m.id} ${m.text}`);
+        if (messages.length === 0) append("httpLog", "· (leere Antwort)");
+      } catch (e) {
+        append("httpLog", "FEHLER: " + e.message);
+      }
+      $("httpState").textContent = "idle";
+    }
+    setInterval(poll, 1000); // <-- der Kern des Overhead-Problems
+
+    async function sendHttp(text) {
+      if (!text) return;
+      await fetch(`${BASE}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+    }
+
+    $("httpSend").addEventListener("click", async () => {
+      const text = $("httpInput").value;
+      await sendHttp(text);
+      $("httpInput").value = "";
+    });
+
+    $("httpRandom").addEventListener("click", async () => {
+      await sendHttp(randomMessage());
+    });
+
+    /* ================================================================
+     *  2) WEBSOCKET  (korrigierte Version von Quelltext 4)
+     *  Demonstriert die VOLLSTÄNDIGE API aus der W3C-Spezifikation:
+     *  Constructor, readyState-Konstanten, alle vier Events, send/close.
+     * ================================================================ */
+
+    // --- Constructor: ws://host:port/path , optional Subprotokolle ---
+    const ws = new WebSocket(WS_URL, ["chat", "superchat"]);
+    ws.binaryType = "arraybuffer"; // String | ArrayBuffer | Blob
+
+    const STATE = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
+    const showState = () => ($("wsState").textContent = STATE[ws.readyState]);
+    showState();
+
+    // --- Event: onopen — Handshake erfolgreich, Verbindung offen ---
+    ws.onopen = () => {
+      showState();
+      append("wsLog", "✓ onopen — Subprotokoll: " + (ws.protocol || "—"));
+      // readonly-Attribute aus der Spezifikation:
+      append("wsLog", `  url=${ws.url}`);
+      append("wsLog", `  extensions=${ws.extensions || "—"}`);
+    };
+
+    // --- Event: onmessage — Server-Push (das, was Polling spart) ---
+    //   ACHTUNG: Das Paper schreibt fälschlich `wsChat.ondata`.
+    //   In der echten Spezifikation heißt der Callback `onmessage`,
+    //   und die Nutzdaten liegen in `event.data`.
+    ws.onmessage = (event) => {
+      const m = JSON.parse(event.data);
+      append("wsLog", `#${m.id} ${m.text}`);
+    };
+
+    // --- Event: onerror — ungültiges Frame / Verbindungsfehler ---
+    ws.onerror = () => append("wsLog", "✗ onerror");
+
+    // --- Event: onclose — liefert Statuscode im CloseEvent ---
+    ws.onclose = (event) => {
+      showState();
+      append("wsLog", `✗ onclose — code=${event.code} reason=${event.reason || "—"}`);
+    };
+
+    function sendWs(text) {
+      if (!text) return;
+      if (ws.readyState !== WebSocket.OPEN) {
+        append("wsLog", "send() ignoriert — Socket nicht OPEN");
+        return;
+      }
+      ws.send(JSON.stringify({ text }));
+    }
+
+    // --- Methode: send(data) ---
+    $("wsSend").addEventListener("click", () => {
+      const text = $("wsInput").value;
+      sendWs(text);
+      $("wsInput").value = "";
+    });
+
+    $("wsRandom").addEventListener("click", () => {
+      sendWs(randomMessage());
+    });
+
+    // bufferedAmount kann man hier live beobachten:
+    setInterval(() => {
+      if (ws.bufferedAmount > 0)
+        append("wsLog", `  bufferedAmount=${ws.bufferedAmount}B`);
+    }, 2000);
+
+    // --- Methode: close(code, reason) beim Verlassen der Seite ---
+    window.addEventListener("beforeunload", () => ws.close(1000, "bye"));
+  </script>
+</body>
+
+</html>
