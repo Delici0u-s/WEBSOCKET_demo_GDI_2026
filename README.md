@@ -30,7 +30,7 @@ Benötigt Node ≥ 18 (nutzt natives `fetch`). OS-unabhängig.
 
 ```bash
 npm run server
-# dann src/client/index.html im Browser öffnen (gleiche Origin: http://localhost:8080)
+# dann src/client/index.html im Browser öffnen (http://localhost:8080/)
 # DevTools → Network zeigt: links 1 Request/s, rechts nur Push-Frames
 ```
 
