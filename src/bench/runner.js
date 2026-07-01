@@ -51,7 +51,8 @@ async function startServer() {
   });
   await new Promise((resolve) => {
     proc.stdout.on("data", (d) => {
-      if (d.toString().includes("metrics:")) resolve();
+      if (d.toString().includes("http://localhost")) resolve();
+      // if (d.toString().includes("metrics:")) resolve();
     });
   });
   return proc;
@@ -172,7 +173,7 @@ function report(http, ws) {
   console.log("\n" + line);
   console.log(
     `BENCHMARK  duration=${seconds}s  poll=${POLL_INTERVAL_MS}ms  ` +
-      `msg-every=${MSG_INTERVAL_MS}ms  payload=${PAYLOAD.length}B`
+    `msg-every=${MSG_INTERVAL_MS}ms  payload=${PAYLOAD.length}B`
   );
   console.log(line);
 
@@ -205,7 +206,7 @@ function report(http, ws) {
   const saving = (1 - wsTotal / httpTotal) * 100;
   console.log(
     `\nWebSocket spart ${saving.toFixed(2)} % Bytes gegenüber Polling ` +
-      `(inkl. einmaligem Handshake von ${ws.metrics.handshakeBytes} B).`
+    `(inkl. einmaligem Handshake von ${ws.metrics.handshakeBytes} B).`
   );
 
   // machine-readable for charting / Word import
